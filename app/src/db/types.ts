@@ -42,6 +42,7 @@ export type Movement = {
   person_name: string | null;
   card_id: number | null;
   card_name: string | null;
+  card_color: string | null;
   installments: number | null;
   installment_override: number | null;
   attachment_count: number;

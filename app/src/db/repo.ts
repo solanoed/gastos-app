@@ -147,7 +147,7 @@ export function peopleSummary(db: DB) {
 
 const MOVEMENT_SELECT = `
   SELECT m.*, c.name AS cat_name, c.icon AS cat_icon, c.color AS cat_color,
-         p.name AS person_name, cp.card_id AS card_id, k.name AS card_name,
+         p.name AS person_name, cp.card_id AS card_id, k.name AS card_name, k.color AS card_color,
          cp.installments AS installments, cp.installment_override AS installment_override,
          (SELECT COUNT(*) FROM attachments a WHERE a.movement_id = m.id) AS attachment_count
   FROM movements m

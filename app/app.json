@@ -2,7 +2,7 @@
   "expo": {
     "name": "Mis Cuentas",
     "slug": "mis-cuentas",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "miscuentas",
@@ -21,7 +21,8 @@
         "android.permission.USE_FINGERPRINT",
         "android.permission.READ_CONTACTS",
         "android.permission.WRITE_CONTACTS"
-      ]
+      ],
+      "versionCode": 2
     },
     "web": {
       "output": "single",

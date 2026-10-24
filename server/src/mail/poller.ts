@@ -110,6 +110,14 @@ export async function scanMailbox(log: (msg: string) => void = () => {}): Promis
         aiCalls++;
         const x = await extractFromEmail({ from: fromAddr, subject, date, text }, categories, fixedNames);
         if (!x || !x.es_movimiento || !x.monto || x.monto <= 0) continue;
+        // Varios correos por la misma operación (confirmación + recibo): mismo monto en fechas cercanas.
+        const txDate = x.fecha ?? date;
+        const dup = await pool.query(
+          `SELECT 1 FROM inbox_items WHERE user_id = $1 AND amount = $2
+             AND abs(to_date(date, 'YYYY-MM-DD') - to_date($3, 'YYYY-MM-DD')) <= 2`,
+          [userId, Math.round(x.monto), txDate],
+        );
+        if (dup.rowCount) continue;
         await pool.query(
           `INSERT INTO inbox_items (user_id, source, source_id, received_at, sender, subject, kind, amount, merchant, concept,
              date, due_date, card_last4, suggested_category, matched_recurring)
@@ -117,7 +125,7 @@ export async function scanMailbox(log: (msg: string) => void = () => {}): Promis
            ON CONFLICT (user_id, source, source_id) DO NOTHING`,
           [
             userId, messageId, parsed.date ?? new Date(), fromAddr, subject.slice(0, 300), x.tipo, Math.round(x.monto),
-            x.comercio, x.concepto, x.fecha ?? date, x.vence, x.tarjeta_ultimos4,
+            x.comercio, x.concepto, txDate, x.vence, x.tarjeta_ultimos4,
             categories.includes(x.categoria_sugerida ?? '') ? x.categoria_sugerida : null,
             fixedNames.includes(x.gasto_fijo_relacionado ?? '') ? x.gasto_fijo_relacionado : null,
           ],

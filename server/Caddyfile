@@ -1,0 +1,10 @@
+{
+	# El 80 está ocupado por otro proyecto: Caddy no escucha HTTP público.
+	http_port 8088
+	auto_https disable_redirects
+}
+
+{$DOMAIN:157-137-202-209.sslip.io} {
+	encode gzip
+	reverse_proxy api:3100
+}

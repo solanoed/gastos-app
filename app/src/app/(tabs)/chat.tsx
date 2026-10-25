@@ -1,10 +1,12 @@
-import { router, useNavigation } from 'expo-router';
+import * as DocumentPicker from 'expo-document-picker';
+import { router, useFocusEffect, useNavigation } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useEffect, useLayoutEffect, useRef, useState, type ComponentRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentRef } from 'react';
 import { Alert, FlatList, Pressable, ScrollView, TextInput, View } from 'react-native';
 
 import { MovementForm, type FormInitial } from '@/components/movement-form';
-import { Chip, Icon, IconButton, IconCircle, Row, Txt } from '@/components/ui';
+import { StatementReview } from '@/components/statement-review';
+import { Button, Chip, Icon, IconButton, IconCircle, Input, Row, Sheet, Txt } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import {
   addChat,
@@ -26,6 +28,7 @@ import { answerLocally } from '@/lib/answers';
 import { api, getSession } from '@/lib/api';
 import { dayLabel, money, todayKey } from '@/lib/format';
 import { parseInput } from '@/lib/parser';
+import { getStatement, PdfPasswordNeeded, pendingStatement, uploadStatement, type Statement } from '@/lib/statements';
 import { syncNow } from '@/lib/sync';
 
 const HINTS = ['uber 15k', 'rappi 32k pizza', 'tc 600k mercado 6 cuotas', 'victor me debe 20k', '¿en qué gasté más?', '¿me alcanza para algo de 2m a 12 cuotas?', '= 32k*3'];
@@ -43,6 +46,93 @@ export default function ChatScreen() {
   const { data: messages, reload } = useData((d) => listChat(d), []);
   const { data: chips } = useData((d) => frequentCategories(d, 10), []);
   const inbox = useInboxCount();
+
+  // Extracto bancario: subiendo → procesando en el servidor → listo para revisar.
+  const [uploading, setUploading] = useState(false);
+  const [processing, setProcessing] = useState<{ id: number; msgId: number | null } | null>(null);
+  const [statement, setStatement] = useState<Statement | null>(null);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [pw, setPw] = useState<{ file: { uri: string; name: string }; wrong: boolean; value: string } | null>(null);
+
+  // Retomar un extracto que quedó procesando o sin revisar (por ejemplo si se cerró la app).
+  useFocusEffect(
+    useCallback(() => {
+      (async () => {
+        if (!(await getSession()).token) return;
+        const st = await pendingStatement().catch(() => null);
+        if (st?.status === 'processing') setProcessing((p) => p ?? { id: st.id, msgId: null });
+        else if (st?.status === 'pending') setStatement((cur) => cur ?? st);
+      })();
+    }, []),
+  );
+
+  useEffect(() => {
+    if (!processing) return;
+    let alive = true;
+    const tick = async () => {
+      const st = await getStatement(processing.id).catch(() => null);
+      if (!alive || !st || st.status === 'processing') return;
+      alive = false;
+      setProcessing(null);
+      let text: string;
+      if (st.status === 'pending') {
+        const d = st.check.diferencia;
+        text =
+          `📄 Leí ${st.items.length} movimientos del extracto${st.meta.banco ? ` de ${st.meta.banco}` : ''}` +
+          (d === 0 ? ' y cuadra exacto ✓.' : d != null ? `, pero no cuadra por ${money(Math.abs(d))}.` : '.') +
+          ' Revísalos y elige cuáles agregar.';
+        setStatement(st);
+        setReviewOpen(true);
+      } else {
+        text = `No pude leer el extracto: ${st.error ?? 'error desconocido'}`;
+      }
+      if (processing.msgId) await updateChat(db, processing.msgId, text);
+      else await addChat(db, 'bot', text);
+      reload();
+    };
+    tick();
+    const h = setInterval(tick, 5000);
+    return () => {
+      alive = false;
+      clearInterval(h);
+    };
+  }, [processing, db, reload]);
+
+  function attach() {
+    Alert.alert('Adjuntar', '¿Qué quieres agregar?', [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Movimiento', onPress: () => setForm({ open: true }) },
+      { text: 'Extracto (PDF)', onPress: pickStatement },
+    ]);
+  }
+
+  async function pickStatement() {
+    if (!(await getSession()).token) {
+      return Alert.alert('Inicia sesión', 'Para leer extractos con la IA necesitas iniciar sesión en Ajustes.');
+    }
+    if (processing) return Alert.alert('Un momento', 'Todavía estoy leyendo el extracto anterior.');
+    const r = await DocumentPicker.getDocumentAsync({ type: 'application/pdf', copyToCacheDirectory: true });
+    if (r.canceled || !r.assets[0]) return;
+    await sendStatement({ uri: r.assets[0].uri, name: r.assets[0].name });
+  }
+
+  async function sendStatement(file: { uri: string; name: string }, password?: string) {
+    setUploading(true);
+    try {
+      const id = await uploadStatement(file, password);
+      setPw(null);
+      await addChat(db, 'user', `📄 ${file.name}`);
+      const msgId = await addChat(db, 'bot', 'Leyendo el extracto… puede tardar un par de minutos. Te aviso aquí cuando esté listo.');
+      setStatement(null);
+      setProcessing({ id, msgId });
+      reload();
+    } catch (e) {
+      if (e instanceof PdfPasswordNeeded) setPw({ file, wrong: e.wrong, value: '' });
+      else Alert.alert('No se pudo subir el extracto', (e as Error).message);
+    } finally {
+      setUploading(false);
+    }
+  }
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -180,6 +270,11 @@ export default function ChatScreen() {
   return (
     <View ref={keyboardRef} style={{ flex: 1, backgroundColor: t.background, paddingBottom: keyboardOverlap }}>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={{ gap: 8, padding: Spacing.two, paddingHorizontal: Spacing.three }}>
+        {statement ? (
+          <Chip label="Revisar extracto" icon="file-document-check-outline" color={t.info} selected onPress={() => setReviewOpen(true)} />
+        ) : processing || uploading ? (
+          <Chip label="Leyendo extracto…" icon="progress-clock" color={t.info} />
+        ) : null}
         {inbox > 0 ? <Chip label={`Por aprobar (${inbox})`} icon="inbox-arrow-down" color={t.danger} selected onPress={() => router.push('/bandeja')} /> : null}
         <Chip label="Tarjeta" icon="credit-card-plus" color={t.info} onPress={() => setForm({ open: true, initial: { card: { card_id: 0, installments: 1 } } })} />
         {(chips ?? []).map((c) => (
@@ -219,7 +314,7 @@ export default function ChatScreen() {
       ) : null}
 
       <Row style={{ padding: Spacing.two, paddingHorizontal: Spacing.three, backgroundColor: t.card, borderTopWidth: 1, borderTopColor: t.border }}>
-        <IconButton icon="paperclip" color={t.textSecondary} onPress={() => setForm({ open: true })} />
+        <IconButton icon="paperclip" color={t.textSecondary} onPress={attach} />
         <TextInput
           ref={inputRef}
           value={text}
@@ -235,6 +330,38 @@ export default function ChatScreen() {
           <Icon name="send" size={20} color={t.primaryText} />
         </Pressable>
       </Row>
+
+      {statement && reviewOpen ? (
+        <StatementReview
+          statement={statement}
+          onClose={() => setReviewOpen(false)}
+          onDone={async (summary) => {
+            setReviewOpen(false);
+            setStatement(null);
+            await addChat(db, 'bot', summary);
+            reload();
+          }}
+        />
+      ) : null}
+
+      {pw ? (
+        <Sheet
+          visible
+          onClose={() => setPw(null)}
+          title="PDF con contraseña"
+          footer={<Button title="Abrir extracto" icon="lock-open-variant" loading={uploading} disabled={!pw.value} onPress={() => sendStatement(pw.file, pw.value)} />}>
+          <Txt muted>Los bancos suelen proteger el extracto con tu número de cédula. La contraseña solo se usa para abrirlo y no se guarda.</Txt>
+          {pw.wrong ? <Txt color={t.danger}>La contraseña no es correcta, intenta de nuevo.</Txt> : null}
+          <Input
+            value={pw.value}
+            onChangeText={(v) => setPw((p) => (p ? { ...p, value: v } : p))}
+            placeholder="Contraseña del PDF"
+            secureTextEntry
+            autoFocus
+            onSubmitEditing={() => pw.value && sendStatement(pw.file, pw.value)}
+          />
+        </Sheet>
+      ) : null}
 
       <MovementForm
         visible={form.open}

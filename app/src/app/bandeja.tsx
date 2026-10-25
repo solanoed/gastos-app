@@ -120,7 +120,7 @@ export default function Bandeja() {
       contentContainerStyle={{ padding: Spacing.three, gap: Spacing.three, paddingBottom: Spacing.six }}
       refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
       <Txt variant="small" muted>
-        Movimientos detectados en tu correo. Apruébalos para guardarlos o descártalos.
+        Movimientos detectados en tu correo y en las notificaciones del banco. Apruébalos para guardarlos o descártalos.
       </Txt>
       <Button title="Revisar correo ahora" icon="email-sync-outline" variant="secondary" onPress={scan} loading={scanning} />
 
@@ -132,7 +132,7 @@ export default function Bandeja() {
 
       {items && items.length === 0 && !error ? (
         <Card>
-          <Empty icon="inbox-outline" title="Nada por aprobar" text="Cuando llegue un pago o compra a tu correo, aparecerá aquí." />
+          <Empty icon="inbox-outline" title="Nada por aprobar" text="Cuando llegue un pago o compra a tu correo o al celular, aparecerá aquí." />
         </Card>
       ) : null}
 

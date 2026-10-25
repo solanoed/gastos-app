@@ -1,7 +1,7 @@
 import Constants from 'expo-constants';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Modal, Switch, View } from 'react-native';
+import { Alert, AppState, Modal, Switch, View } from 'react-native';
 
 import { LoginScreen } from '@/components/auth-gate';
 import { authenticate, biometricAvailable } from '@/components/lock-gate';
@@ -10,6 +10,12 @@ import { getSetting, setSetting } from '@/db/repo';
 import { useBump } from '@/hooks/use-data';
 import { useTheme } from '@/hooks/use-theme';
 import { api, clearSession, getSession } from '@/lib/api';
+import {
+  bankNotificationsEnabled,
+  bankNotificationsSupported,
+  flushBankNotifications,
+  openNotificationAccessSettings,
+} from '@/lib/bank-notifications';
 import { lastSyncInfo, restoreFromServer, syncNow } from '@/lib/sync';
 
 export default function Ajustes() {
@@ -161,10 +167,11 @@ export default function Ajustes() {
         ) : null}
       </Card>
 
+      <SectionTitle title="Movimientos automáticos" />
+      <BankNotificationsCard />
+
       <SectionTitle title="Próximamente" />
       <Card>
-        <Soon icon="cellphone-message" title="Leer notificaciones y SMS del banco" text="Detectar compras al instante (requiere el APK)." />
-        <Divider />
         <Soon icon="file-document-outline" title="Leer facturas desde la foto" text="Sacar el valor y la fecha de una foto." />
         <Divider />
         <Soon icon="microsoft-excel" title="Exportar a Excel" text="Descargar tus movimientos." />
@@ -188,6 +195,58 @@ export default function Ajustes() {
       </Modal>
       {pwOpen ? <PasswordSheet onClose={() => setPwOpen(false)} /> : null}
     </Screen>
+  );
+}
+
+function BankNotificationsCard() {
+  const t = useTheme();
+  const [enabled, setEnabled] = useState(bankNotificationsEnabled);
+
+  // Al volver de los ajustes del celular, revisar si ya dio el permiso.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') return;
+      const now = bankNotificationsEnabled();
+      setEnabled(now);
+      if (now) flushBankNotifications();
+    });
+    return () => sub.remove();
+  }, []);
+
+  return (
+    <Card>
+      <Row>
+        <Icon name="cellphone-message" color={t.primary} />
+        <View style={{ flex: 1 }}>
+          <Txt bold>Notificaciones del banco</Txt>
+          <Txt variant="caption" muted>
+            Lee las notificaciones de Bancolombia, Nequi y Daviplata (y los SMS del banco) y deja los movimientos en Por aprobar. Las
+            demás notificaciones se ignoran.
+          </Txt>
+        </View>
+      </Row>
+      {!bankNotificationsSupported ? (
+        <Txt variant="caption" color={t.warning}>
+          Disponible solo en el APK de Android.
+        </Txt>
+      ) : enabled ? (
+        <Row>
+          <Icon name="check-circle" size={18} color={t.primary} />
+          <Txt variant="small" color={t.primary} style={{ flex: 1 }}>
+            Activo
+          </Txt>
+          <Button title="Ajustes" variant="ghost" small onPress={openNotificationAccessSettings} />
+        </Row>
+      ) : (
+        <>
+          <Button title="Dar acceso a notificaciones" icon="bell-ring-outline" onPress={openNotificationAccessSettings} />
+          <Txt variant="caption" muted>
+            Busca &quot;Mis Cuentas&quot; y actívalo. Si sale bloqueado (&quot;ajuste restringido&quot;), ve a Ajustes del celular → Apps → Mis
+            Cuentas → ⋮ → Permitir ajustes restringidos, y vuelve a intentarlo.
+          </Txt>
+        </>
+      )}
+    </Card>
   );
 }
 

@@ -39,6 +39,7 @@ export class ApiError extends Error {
   constructor(
     message: string,
     public status: number,
+    public data: Record<string, unknown> = {},
   ) {
     super(message);
   }
@@ -68,7 +69,7 @@ export async function api<T>(path: string, init: RequestInit & { json?: unknown;
   const data = (await res.json().catch(() => ({}))) as { error?: string };
   if (!res.ok) {
     if (res.status === 401 && s.token && path !== '/auth/login') await clearSession();
-    throw new ApiError(data.error ?? `Error ${res.status}`, res.status);
+    throw new ApiError(data.error ?? `Error ${res.status}`, res.status, data);
   }
   return data as T;
 }

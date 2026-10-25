@@ -15,7 +15,7 @@ export type Extracted = {
   gasto_fijo_relacionado: string | null;
 };
 
-const PROMPT = `Analiza este correo de un usuario en Colombia y responde SOLO con un objeto JSON (sin texto extra) con estas claves:
+const PROMPT = `Analiza este correo o notificación del celular de un usuario en Colombia y responde SOLO con un objeto JSON (sin texto extra) con estas claves:
 - es_movimiento: true solo si el correo informa una transacción real con monto (compra, pago realizado, transferencia, retiro, ingreso recibido) o una factura/cobro concreto por pagar. Publicidad, promociones, extractos generales sin un monto puntual o avisos de seguridad = false.
 - tipo: "gasto" (compra/débito/retiro/transferencia enviada), "ingreso" (dinero recibido), "pago_fijo" (confirmación de pago de una obligación como ICETEX, crédito, servicio), "factura_por_pagar" (factura o cobro pendiente) u "otro".
 - monto: número en pesos sin puntos ni símbolo (ej 152300), o null.

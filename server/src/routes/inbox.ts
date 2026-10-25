@@ -2,9 +2,25 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
 import { pool } from '../db.js';
+import { saveDetected, userLists } from '../inbox/store.js';
+import { extractFromEmail } from '../mail/extract.js';
 import { scanMailbox } from '../mail/poller.js';
 
 const Decide = z.object({ status: z.enum(['approved', 'rejected']) });
+
+const Notifications = z.object({
+  items: z
+    .array(
+      z.object({
+        key: z.string().min(1).max(200),
+        app: z.string().max(100),
+        title: z.string().max(300),
+        text: z.string().max(2000),
+        posted_at: z.number(),
+      }),
+    )
+    .max(50),
+});
 
 /** Bandeja "Por aprobar": movimientos detectados automáticamente (correo; luego notificaciones). */
 export async function inboxRoutes(app: FastifyInstance) {
@@ -38,6 +54,37 @@ export async function inboxRoutes(app: FastifyInstance) {
     if (!r.rowCount) return reply.code(404).send({ error: 'No existe' });
     return { ok: true };
   });
+
+  /** Notificaciones del banco que el celular capturó (Bancolombia, Nequi, Daviplata, SMS). */
+  app.post(
+    '/inbox/notifications',
+    { onRequest: [app.authenticate], config: { rateLimit: { max: 20, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const body = Notifications.safeParse(req.body);
+      if (!body.success) return reply.code(400).send({ error: 'Formato inválido' });
+      const lists = await userLists(req.userId);
+      let added = 0;
+      for (const n of body.data.items) {
+        const exists = await pool.query('SELECT 1 FROM inbox_items WHERE user_id = $1 AND source = $2 AND source_id = $3', [
+          req.userId,
+          'notification',
+          n.key,
+        ]);
+        if (exists.rowCount) continue;
+        const when = new Date(n.posted_at);
+        const date = when.toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+        const x = await extractFromEmail({ from: n.app, subject: n.title, date, text: n.text }, lists.categories, lists.fixedNames);
+        const saved = await saveDetected(
+          req.userId,
+          { source: 'notification', sourceId: n.key, receivedAt: when, sender: n.app, subject: n.title || n.text, fallbackDate: date },
+          x,
+          lists,
+        );
+        if (saved) added++;
+      }
+      return { added };
+    },
+  );
 
   /** Revisar el correo ya (además de la revisión automática). */
   app.post('/inbox/scan', { onRequest: [app.authenticate], config: { rateLimit: { max: 3, timeWindow: '1 minute' } } }, async () => {

@@ -3,13 +3,14 @@ import * as SplashScreen from 'expo-splash-screen';
 import { SQLiteProvider } from 'expo-sqlite';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
-import { useColorScheme } from 'react-native';
+import { AppState, useColorScheme } from 'react-native';
 
 import { AuthGate } from '@/components/auth-gate';
 import { LockGate } from '@/components/lock-gate';
 import { Colors } from '@/constants/theme';
 import { migrate } from '@/db/schema';
 import { DataVersionProvider } from '@/hooks/use-data';
+import { flushBankNotifications } from '@/lib/bank-notifications';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -37,6 +38,7 @@ export default function RootLayout() {
         <DataVersionProvider>
           <AuthGate>
             <LockGate>
+              <FlushNotifications />
               <Stack
                 screenOptions={{
                   headerShadowVisible: false,
@@ -63,6 +65,18 @@ export default function RootLayout() {
 function HideSplash() {
   useEffect(() => {
     SplashScreen.hideAsync();
+  }, []);
+  return null;
+}
+
+/** Al abrir la app (o volver a ella) manda al servidor las notificaciones del banco capturadas. */
+function FlushNotifications() {
+  useEffect(() => {
+    flushBankNotifications();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') flushBankNotifications();
+    });
+    return () => sub.remove();
   }, []);
   return null;
 }

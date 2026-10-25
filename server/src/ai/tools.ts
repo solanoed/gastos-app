@@ -279,6 +279,25 @@ export const TOOLS: Record<string, Tool> = {
       );
     },
   },
+
+  por_aprobar: {
+    description:
+      'Movimientos detectados automáticamente (correo, notificaciones del banco) que esperan aprobación, y el último extracto bancario subido con su resumen.',
+    parameters: { type: 'object', properties: {} },
+    async run(userId) {
+      const pendientes = await q(
+        `SELECT source AS origen, kind AS tipo, amount AS monto, merchant AS comercio, concept AS concepto, date AS fecha
+         FROM inbox_items WHERE user_id = $1 AND status = 'pending' ORDER BY date DESC LIMIT 30`,
+        [userId],
+      );
+      const [extracto] = await q<{ meta: unknown; checks: unknown; status: string; movimientos: number; subido: string }>(
+        `SELECT meta, checks, status, jsonb_array_length(items) AS movimientos, created_at::date::text AS subido
+         FROM statements WHERE user_id = $1 ORDER BY id DESC LIMIT 1`,
+        [userId],
+      );
+      return { pendientes, ultimo_extracto: extracto ?? null };
+    },
+  },
 };
 
 export const TOOL_DEFS = Object.entries(TOOLS).map(([name, t]) => ({

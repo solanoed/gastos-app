@@ -48,6 +48,18 @@ export async function migrate() {
         decided_at TIMESTAMPTZ,
         UNIQUE (user_id, source, source_id)
       );
+      CREATE TABLE IF NOT EXISTS statements (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        filename TEXT,
+        meta JSONB NOT NULL,
+        items JSONB NOT NULL,
+        checks JSONB NOT NULL,
+        status TEXT NOT NULL DEFAULT 'processing',
+        error TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        applied_at TIMESTAMPTZ
+      );
       CREATE TABLE IF NOT EXISTS sync_state (
         user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
         snapshot JSONB NOT NULL,
@@ -55,6 +67,10 @@ export async function migrate() {
         pushed_at TIMESTAMPTZ NOT NULL DEFAULT now()
       );
     `);
+    // Un extracto que se estaba procesando cuando se reinició el servidor ya no va a terminar.
+    await client.query(
+      "UPDATE statements SET status = 'error', error = 'El servidor se reinició mientras se procesaba. Súbelo de nuevo.' WHERE status = 'processing'",
+    );
     for (const t of TABLES) {
       const cols = t.columns.map(([n, type]) => `"${n}" ${type}`).join(', ');
       const pk = ['user_id', ...t.primaryKey].join(', ');

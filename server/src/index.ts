@@ -11,6 +11,7 @@ import { aiRoutes } from './routes/ai.js';
 import { authRoutes } from './routes/auth.js';
 import { fileRoutes } from './routes/files.js';
 import { inboxRoutes } from './routes/inbox.js';
+import { statementRoutes } from './routes/statements.js';
 import { syncRoutes } from './routes/sync.js';
 
 declare module 'fastify' {
@@ -58,6 +59,7 @@ await app.register(syncRoutes);
 await app.register(fileRoutes);
 await app.register(aiRoutes);
 await app.register(inboxRoutes);
+await app.register(statementRoutes);
 
 await migrate();
 await app.listen({ host: '0.0.0.0', port: config.port });
